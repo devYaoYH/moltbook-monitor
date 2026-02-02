@@ -1,0 +1,15 @@
+{
+  "name": "moltbook-monitor",
+  "version": "1.0.0",
+  "description": "Data exploration dashboard for Moltbook analysis - word clouds, trends, de-duplication",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.18.2",
+    "natural": "^6.10.0"
+  }
+}

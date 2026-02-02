@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📊 Moltbook Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3-cloud@1.2.5/build/d3.layout.cloud.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --purple: #a371f7;
+      --red: #f85149;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 1.5rem;
+    }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    h1 { color: var(--accent); font-size: 1.5rem; }
+    
+    .stats-bar {
+      display: flex;
+      gap: 2rem;
+      font-size: 0.9rem;
+    }
+    
+    .stat { color: var(--text-dim); }
+    .stat strong { color: var(--text); }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    
+    .card h2 {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+    
+    .card.full-width {
+      grid-column: 1 / -1;
+    }
+    
+    #wordcloud { width: 100%; height: 350px; }
+    #timeline { width: 100%; }
+    #submolts { width: 100%; }
+    #authors { width: 100%; }
+    
+    .wordcloud-controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    select, input, button {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    
+    button {
+      background: var(--accent);
+      color: #000;
+      cursor: pointer;
+      border: none;
+    }
+    
+    button:hover { opacity: 0.9; }
+    
+    .duplicates-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .duplicate-item {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    
+    .duplicate-item:last-child { border-bottom: none; }
+    
+    .similarity-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    
+    .similarity-high { background: var(--red); color: #fff; }
+    .similarity-medium { background: var(--orange); color: #000; }
+    .similarity-low { background: var(--green); color: #000; }
+    
+    .post-title { color: var(--accent); }
+    .post-author { color: var(--text-dim); font-size: 0.85rem; }
+    
+    .search-box {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .search-box input { flex: 1; }
+    
+    .search-results {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .search-result {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .empty { color: var(--text-dim); font-style: italic; text-align: center; padding: 2rem; }
+    
+    footer {
+      margin-top: 2rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+    
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📊 Moltbook Monitor</h1>
+    <div class="stats-bar" id="stats-bar">Loading...</div>
+  </header>
+  
+  <div class="grid">
+    <div class="card full-width">
+      <h2>Word Cloud</h2>
+      <div class="wordcloud-controls">
+        <select id="wordcloud-source">
+          <option value="titles">Titles only</option>
+          <option value="content">Content only</option>
+          <option value="both">Titles + Content</option>
+        </select>
+        <button onclick="loadWordCloud()">Refresh</button>
+      </div>
+      <div id="wordcloud"></div>
+    </div>
+    
+    <div class="card">
+      <h2>Posts Over Time</h2>
+      <div id="timeline"></div>
+    </div>
+    
+    <div class="card">
+      <h2>Top Submolts</h2>
+      <div id="submolts"></div>
+    </div>
+    
+    <div class="card">
+      <h2>Top Authors</h2>
+      <div id="authors"></div>
+    </div>
+    
+    <div class="card">
+      <h2>Potential Duplicates</h2>
+      <div class="duplicates-list" id="duplicates">Loading...</div>
+    </div>
+    
+    <div class="card">
+      <h2>Search Posts</h2>
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="Search titles and content...">
+        <button onclick="searchPosts()">Search</button>
+      </div>
+      <div class="search-results" id="search-results">
+        <p class="empty">Enter a search term</p>
+      </div>
+    </div>
+  </div>
+  
+  <footer>
+    <p>Data source: <a href="https://moltbook.com">Moltbook</a> • Updated every sync</p>
+  </footer>
+  
+  <script>
+    // Load stats
+    async function loadStats() {
+      const stats = await fetch('/api/stats').then(r => r.json());
+      document.getElementById('stats-bar').innerHTML = `
+        <span class="stat"><strong>${stats.totalPosts}</strong> posts</span>
+        <span class="stat"><strong>${stats.uniqueAuthors}</strong> authors</span>
+        <span class="stat"><strong>${stats.uniqueSubmolts}</strong> submolts</span>
+        <span class="stat"><strong>${stats.totalUpvotes.toLocaleString()}</strong> upvotes</span>
+      `;
+    }
+    
+    // Word cloud using D3
+    async function loadWordCloud() {
+      const source = document.getElementById('wordcloud-source').value;
+      const words = await fetch(`/api/wordcloud?source=${source}&limit=80`).then(r => r.json());
+      
+      const container = document.getElementById('wordcloud');
+      container.innerHTML = '';
+      
+      const width = container.clientWidth;
+      const height = 350;
+      const maxCount = Math.max(...words.map(w => w.count));
+      
+      const layout = d3.layout.cloud()
+        .size([width, height])
+        .words(words.map(w => ({
+          text: w.word,
+          size: 12 + (w.count / maxCount) * 48
+        })))
+        .padding(3)
+        .rotate(() => (Math.random() > 0.8 ? 90 : 0))
+        .font('sans-serif')
+        .fontSize(d => d.size)
+        .on('end', draw);
+      
+      layout.start();
+      
+      function draw(words) {
+        const colors = ['#58a6ff', '#3fb950', '#a371f7', '#d29922', '#f85149', '#79c0ff'];
+        
+        d3.select('#wordcloud')
+          .append('svg')
+          .attr('width', width)
+          .attr('height', height)
+          .append('g')
+          .attr('transform', `translate(${width/2},${height/2})`)
+          .selectAll('text')
+          .data(words)
+          .enter()
+          .append('text')
+          .style('font-size', d => d.size + 'px')
+          .style('font-family', 'sans-serif')
+          .style('fill', () => colors[Math.floor(Math.random() * colors.length)])
+          .attr('text-anchor', 'middle')
+          .attr('transform', d => `translate(${d.x},${d.y}) rotate(${d.rotate})`)
+          .text(d => d.text);
+      }
+    }
+    
+    // Timeline chart
+    async function loadTimeline() {
+      const data = await fetch('/api/trends/timeline').then(r => r.json());
+      
+      const spec = {
+        $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+        width: 'container',
+        height: 200,
+        background: 'transparent',
+        data: { values: data },
+        mark: { type: 'bar', color: '#58a6ff' },
+        encoding: {
+          x: { field: 'date', type: 'temporal', title: null },
+          y: { field: 'posts', type: 'quantitative', title: 'Posts' },
+          tooltip: [
+            { field: 'date', type: 'temporal', title: 'Date' },
+            { field: 'posts', type: 'quantitative', title: 'Posts' },
+            { field: 'upvotes', type: 'quantitative', title: 'Upvotes' }
+          ]
+        },
+        config: {
+          axis: { labelColor: '#8b949e', titleColor: '#8b949e', gridColor: '#30363d' },
+          view: { stroke: 'transparent' }
+        }
+      };
+      
+      vegaEmbed('#timeline', spec, { actions: false });
+    }
+    
+    // Submolts chart
+    async function loadSubmolts() {
+      const data = await fetch('/api/trends/submolts').then(r => r.json());
+      
+      const spec = {
+        $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+        width: 'container',
+        height: 300,
+        background: 'transparent',
+        data: { values: data.slice(0, 10) },
+        mark: { type: 'bar', color: '#a371f7' },
+        encoding: {
+          y: { field: 'submolt', type: 'nominal', title: null, sort: '-x' },
+          x: { field: 'posts', type: 'quantitative', title: 'Posts' },
+          tooltip: [
+            { field: 'submolt', type: 'nominal', title: 'Submolt' },
+            { field: 'posts', type: 'quantitative', title: 'Posts' },
+            { field: 'upvotes', type: 'quantitative', title: 'Upvotes' }
+          ]
+        },
+        config: {
+          axis: { labelColor: '#8b949e', titleColor: '#8b949e', gridColor: '#30363d' },
+          view: { stroke: 'transparent' }
+        }
+      };
+      
+      vegaEmbed('#submolts', spec, { actions: false });
+    }
+    
+    // Authors chart
+    async function loadAuthors() {
+      const data = await fetch('/api/trends/authors').then(r => r.json());
+      
+      const spec = {
+        $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+        width: 'container',
+        height: 300,
+        background: 'transparent',
+        data: { values: data.slice(0, 10) },
+        mark: { type: 'bar', color: '#3fb950' },
+        encoding: {
+          y: { field: 'author', type: 'nominal', title: null, sort: '-x' },
+          x: { field: 'posts', type: 'quantitative', title: 'Posts' },
+          tooltip: [
+            { field: 'author', type: 'nominal', title: 'Author' },
+            { field: 'posts', type: 'quantitative', title: 'Posts' },
+            { field: 'upvotes', type: 'quantitative', title: 'Upvotes' }
+          ]
+        },
+        config: {
+          axis: { labelColor: '#8b949e', titleColor: '#8b949e', gridColor: '#30363d' },
+          view: { stroke: 'transparent' }
+        }
+      };
+      
+      vegaEmbed('#authors', spec, { actions: false });
+    }
+    
+    // Duplicates
+    async function loadDuplicates() {
+      const data = await fetch('/api/duplicates?threshold=0.5').then(r => r.json());
+      const container = document.getElementById('duplicates');
+      
+      if (data.length === 0) {
+        container.innerHTML = '<p class="empty">No duplicates found</p>';
+        return;
+      }
+      
+      container.innerHTML = data.map(d => {
+        const simClass = d.similarity >= 0.8 ? 'high' : d.similarity >= 0.6 ? 'medium' : 'low';
+        return `
+          <div class="duplicate-item">
+            <span class="similarity-badge similarity-${simClass}">${Math.round(d.similarity * 100)}%</span>
+            <div><span class="post-title">${escapeHtml(d.postA.title || '(no title)')}</span> <span class="post-author">by ${d.postA.author}</span></div>
+            <div><span class="post-title">${escapeHtml(d.postB.title || '(no title)')}</span> <span class="post-author">by ${d.postB.author}</span></div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    // Search
+    async function searchPosts() {
+      const q = document.getElementById('search-input').value.trim();
+      if (!q) return;
+      
+      const data = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+      const container = document.getElementById('search-results');
+      
+      if (data.length === 0) {
+        container.innerHTML = '<p class="empty">No results found</p>';
+        return;
+      }
+      
+      container.innerHTML = data.map(p => `
+        <div class="search-result">
+          <div class="post-title">${escapeHtml(p.title || '(no title)')}</div>
+          <div class="post-author">by ${p.author} in m/${p.submolt} • ${p.upvotes} upvotes</div>
+        </div>
+      `).join('');
+    }
+    
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    
+    // Enter key for search
+    document.getElementById('search-input').addEventListener('keypress', e => {
+      if (e.key === 'Enter') searchPosts();
+    });
+    
+    // Load everything
+    loadStats();
+    loadWordCloud();
+    loadTimeline();
+    loadSubmolts();
+    loadAuthors();
+    loadDuplicates();
+  </script>
+</body>
+</html>
