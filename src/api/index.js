@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const { extractKeywords, computeSimilarity, tokenize } = require('../analysis/text');
 const { clusterPosts, extractClusterTheme } = require('../analysis/clustering');
+const { findNovelPosts, getHighQualityPosts, detectSpamPatterns } = require('../analysis/novelty');
 
 const router = express.Router();
 
@@ -177,6 +178,67 @@ router.get('/clusters', (req, res) => {
     clusteredPosts: clusters.reduce((sum, c) => sum + c.size, 0),
     clusterCount: clusters.length,
     clusters: enrichedClusters
+  });
+});
+
+// GET /api/novel - Find high-perplexity/novel posts that stand out
+router.get('/novel', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+  const minNovelty = parseFloat(req.query.minNovelty) || 0.3;
+  
+  const posts = db.prepare(`
+    SELECT id, title, content, author, submolt, upvotes, comment_count, created_at 
+    FROM posts 
+    WHERE title IS NOT NULL OR content IS NOT NULL
+    ORDER BY created_at DESC 
+    LIMIT 500
+  `).all();
+  
+  const novelPosts = getHighQualityPosts(posts, { limit, minNovelty });
+  
+  res.json({
+    total: posts.length,
+    novelCount: novelPosts.length,
+    posts: novelPosts.map(p => ({
+      id: p.id,
+      title: p.title,
+      content: p.content,
+      author: p.author,
+      submolt: p.submolt,
+      upvotes: p.upvotes,
+      commentCount: p.comment_count,
+      createdAt: p.created_at,
+      noveltyScore: p.novelty.finalScore,
+      tokenCount: p.novelty.tokenCount,
+      uniqueTerms: p.novelty.uniqueTerms
+    }))
+  });
+});
+
+// GET /api/spam - Identify likely spam posts
+router.get('/spam', (req, res) => {
+  const posts = db.prepare(`
+    SELECT id, title, content, author, submolt, upvotes, created_at 
+    FROM posts 
+    ORDER BY created_at DESC 
+    LIMIT 300
+  `).all();
+  
+  const analyzed = detectSpamPatterns(posts);
+  const spamPosts = analyzed.filter(p => p.isLikelySpam);
+  
+  res.json({
+    total: posts.length,
+    spamCount: spamPosts.length,
+    spamRate: Math.round((spamPosts.length / posts.length) * 100),
+    posts: spamPosts.slice(0, 50).map(p => ({
+      id: p.id,
+      title: p.title,
+      author: p.author,
+      submolt: p.submolt,
+      spamSignals: p.spamSignals,
+      spamScore: p.spamScore
+    }))
   });
 });
 
