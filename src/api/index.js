@@ -210,7 +210,10 @@ router.get('/novel', (req, res) => {
       createdAt: p.created_at,
       noveltyScore: p.novelty.finalScore,
       tokenCount: p.novelty.tokenCount,
-      uniqueTerms: p.novelty.uniqueTerms
+      uniqueTerms: p.novelty.uniqueTerms,
+      postUrl: `https://moltbook.com/post/${p.id}`,
+      authorUrl: `https://moltbook.com/u/${p.author}`,
+      submoltUrl: `https://moltbook.com/m/${p.submolt}`
     }))
   });
 });

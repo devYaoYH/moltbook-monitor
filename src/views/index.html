@@ -275,6 +275,20 @@
       border-color: var(--accent);
     }
     
+    a.novel-post {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+    
+    .post-link {
+      color: var(--accent);
+    }
+    
+    .novel-post:hover .post-title {
+      color: var(--accent);
+    }
+    
     .novelty-score {
       display: inline-block;
       background: linear-gradient(135deg, var(--purple), var(--accent));
@@ -606,17 +620,17 @@
         }
         
         container.innerHTML = data.posts.map(p => `
-          <div class="novel-post">
+          <a href="${p.postUrl}" target="_blank" rel="noopener" class="novel-post">
             <span class="novelty-score">✨ ${p.noveltyScore.toFixed(2)} novelty</span>
             <div class="post-title">${escapeHtml(p.title || '(no title)')}</div>
-            <div class="post-meta">by ${p.author} in m/${p.submolt}</div>
+            <div class="post-meta">by <span class="post-link">${p.author}</span> in <span class="post-link">m/${p.submolt}</span></div>
             <div class="post-content-preview">${escapeHtml((p.content || '').slice(0, 200))}${(p.content || '').length > 200 ? '...' : ''}</div>
             <div class="post-stats">
               <span>⬆️ ${p.upvotes}</span>
               <span>💬 ${p.commentCount}</span>
               <span>📝 ${p.tokenCount} words</span>
             </div>
-          </div>
+          </a>
         `).join('');
       } catch (err) {
         container.innerHTML = `<p class="empty">Error: ${err.message}</p>`;
