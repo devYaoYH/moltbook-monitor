@@ -116,9 +116,138 @@
       padding: 0.75rem;
       border-bottom: 1px solid var(--border);
       font-size: 0.9rem;
+      cursor: pointer;
     }
     
+    .duplicate-item:hover { background: rgba(255,255,255,0.02); }
+    
     .duplicate-item:last-child { border-bottom: none; }
+    
+    .duplicate-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .expand-icon {
+      color: var(--text-dim);
+      transition: transform 0.2s;
+    }
+    
+    .duplicate-item.expanded .expand-icon {
+      transform: rotate(90deg);
+    }
+    
+    .duplicate-content {
+      display: none;
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: var(--bg);
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    
+    .duplicate-item.expanded .duplicate-content {
+      display: block;
+    }
+    
+    .post-content-preview {
+      color: var(--text-dim);
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      border-left: 2px solid var(--border);
+      white-space: pre-wrap;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    
+    .post-meta {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    
+    .cluster-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    .cluster-controls label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .stats-text {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+    
+    .clusters-list {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    
+    .cluster-item {
+      margin-bottom: 1rem;
+      padding: 1rem;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    
+    .cluster-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      cursor: pointer;
+    }
+    
+    .cluster-size {
+      background: var(--purple);
+      color: #fff;
+      padding: 0.2rem 0.6rem;
+      border-radius: 1rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    
+    .cluster-theme {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .theme-tag {
+      background: var(--border);
+      color: var(--text-dim);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+    
+    .cluster-posts {
+      display: none;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    
+    .cluster-item.expanded .cluster-posts {
+      display: block;
+    }
+    
+    .cluster-post {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .cluster-post:last-child {
+      border-bottom: none;
+    }
     
     .similarity-badge {
       display: inline-block;
@@ -200,8 +329,19 @@
       <div id="authors"></div>
     </div>
     
+    <div class="card full-width">
+      <h2>Content Clusters</h2>
+      <div class="cluster-controls">
+        <label>Similarity threshold: <input type="range" id="cluster-threshold" min="0.2" max="0.8" step="0.05" value="0.4"></label>
+        <span id="threshold-value">0.4</span>
+        <button onclick="loadClusters()">Refresh</button>
+        <span id="cluster-stats" class="stats-text"></span>
+      </div>
+      <div class="clusters-list" id="clusters">Loading...</div>
+    </div>
+    
     <div class="card">
-      <h2>Potential Duplicates</h2>
+      <h2>Potential Duplicates (Pairs)</h2>
       <div class="duplicates-list" id="duplicates">Loading...</div>
     </div>
     
@@ -368,6 +508,54 @@
       vegaEmbed('#authors', spec, { actions: false });
     }
     
+    // Cluster threshold slider
+    document.getElementById('cluster-threshold').addEventListener('input', e => {
+      document.getElementById('threshold-value').textContent = e.target.value;
+    });
+    
+    // Clusters
+    async function loadClusters() {
+      const threshold = document.getElementById('cluster-threshold').value;
+      const container = document.getElementById('clusters');
+      container.innerHTML = '<p class="empty">Analyzing posts...</p>';
+      
+      try {
+        const data = await fetch(`/api/clusters?threshold=${threshold}`).then(r => r.json());
+        
+        document.getElementById('cluster-stats').textContent = 
+          `${data.clusterCount} clusters from ${data.clusteredPosts}/${data.totalPosts} posts`;
+        
+        if (data.clusters.length === 0) {
+          container.innerHTML = '<p class="empty">No clusters found at this threshold</p>';
+          return;
+        }
+        
+        container.innerHTML = data.clusters.map((c, i) => `
+          <div class="cluster-item" onclick="this.classList.toggle('expanded')">
+            <div class="cluster-header">
+              <span class="expand-icon">▶</span>
+              <span class="cluster-size">${c.size} posts</span>
+              <span class="similarity-badge similarity-${c.avgSimilarity >= 0.6 ? 'high' : c.avgSimilarity >= 0.4 ? 'medium' : 'low'}">${Math.round(c.avgSimilarity * 100)}% similar</span>
+              <div class="cluster-theme">
+                ${c.theme.map(t => `<span class="theme-tag">${escapeHtml(t)}</span>`).join('')}
+              </div>
+            </div>
+            <div class="cluster-posts">
+              ${c.posts.map(p => `
+                <div class="cluster-post">
+                  <div class="post-title">${escapeHtml(p.title || '(no title)')}</div>
+                  <div class="post-meta">by ${p.author} in m/${p.submolt} • ${p.upvotes} upvotes</div>
+                  <div class="post-content-preview">${escapeHtml((p.content || '').slice(0, 300))}${(p.content || '').length > 300 ? '...' : ''}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p class="empty">Error loading clusters: ${err.message}</p>`;
+      }
+    }
+    
     // Duplicates
     async function loadDuplicates() {
       const data = await fetch('/api/duplicates?threshold=0.5').then(r => r.json());
@@ -378,13 +566,27 @@
         return;
       }
       
-      container.innerHTML = data.map(d => {
+      container.innerHTML = data.map((d, i) => {
         const simClass = d.similarity >= 0.8 ? 'high' : d.similarity >= 0.6 ? 'medium' : 'low';
         return `
-          <div class="duplicate-item">
-            <span class="similarity-badge similarity-${simClass}">${Math.round(d.similarity * 100)}%</span>
-            <div><span class="post-title">${escapeHtml(d.postA.title || '(no title)')}</span> <span class="post-author">by ${d.postA.author}</span></div>
-            <div><span class="post-title">${escapeHtml(d.postB.title || '(no title)')}</span> <span class="post-author">by ${d.postB.author}</span></div>
+          <div class="duplicate-item" onclick="this.classList.toggle('expanded')">
+            <div class="duplicate-header">
+              <span class="expand-icon">▶</span>
+              <span class="similarity-badge similarity-${simClass}">${Math.round(d.similarity * 100)}%</span>
+              <span>${escapeHtml(d.postA.title || '(no title)')} ↔ ${escapeHtml(d.postB.title || '(no title)')}</span>
+            </div>
+            <div class="duplicate-content">
+              <div style="margin-bottom: 1rem;">
+                <div class="post-title">${escapeHtml(d.postA.title || '(no title)')}</div>
+                <div class="post-meta">by ${d.postA.author} in m/${d.postA.submolt} • ${d.postA.upvotes} upvotes</div>
+                <div class="post-content-preview">${escapeHtml(d.postA.content || '(no content)')}</div>
+              </div>
+              <div>
+                <div class="post-title">${escapeHtml(d.postB.title || '(no title)')}</div>
+                <div class="post-meta">by ${d.postB.author} in m/${d.postB.submolt} • ${d.postB.upvotes} upvotes</div>
+                <div class="post-content-preview">${escapeHtml(d.postB.content || '(no content)')}</div>
+              </div>
+            </div>
           </div>
         `;
       }).join('');
@@ -427,6 +629,7 @@
     loadTimeline();
     loadSubmolts();
     loadAuthors();
+    loadClusters();
     loadDuplicates();
   </script>
 </body>

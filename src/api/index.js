@@ -2,6 +2,7 @@ const express = require('express');
 const Database = require('better-sqlite3');
 const path = require('path');
 const { extractKeywords, computeSimilarity, tokenize } = require('../analysis/text');
+const { clusterPosts, extractClusterTheme } = require('../analysis/clustering');
 
 const router = express.Router();
 
@@ -116,7 +117,7 @@ router.get('/posts', (req, res) => {
 // GET /api/duplicates - Find similar posts (potential duplicates)
 router.get('/duplicates', (req, res) => {
   const threshold = parseFloat(req.query.threshold) || 0.7;
-  const posts = db.prepare('SELECT id, title, content, author FROM posts WHERE title IS NOT NULL LIMIT 200').all();
+  const posts = db.prepare('SELECT id, title, content, author, submolt, upvotes FROM posts WHERE title IS NOT NULL LIMIT 200').all();
   
   const duplicates = [];
   for (let i = 0; i < posts.length; i++) {
@@ -127,8 +128,22 @@ router.get('/duplicates', (req, res) => {
       
       if (similarity >= threshold) {
         duplicates.push({
-          postA: { id: posts[i].id, title: posts[i].title, author: posts[i].author },
-          postB: { id: posts[j].id, title: posts[j].title, author: posts[j].author },
+          postA: { 
+            id: posts[i].id, 
+            title: posts[i].title, 
+            content: posts[i].content,
+            author: posts[i].author,
+            submolt: posts[i].submolt,
+            upvotes: posts[i].upvotes
+          },
+          postB: { 
+            id: posts[j].id, 
+            title: posts[j].title, 
+            content: posts[j].content,
+            author: posts[j].author,
+            submolt: posts[j].submolt,
+            upvotes: posts[j].upvotes
+          },
           similarity: Math.round(similarity * 100) / 100
         });
       }
@@ -136,6 +151,33 @@ router.get('/duplicates', (req, res) => {
   }
   
   res.json(duplicates.sort((a, b) => b.similarity - a.similarity).slice(0, 50));
+});
+
+// GET /api/clusters - Cluster similar posts together
+router.get('/clusters', (req, res) => {
+  const threshold = parseFloat(req.query.threshold) || 0.4;
+  const posts = db.prepare(`
+    SELECT id, title, content, author, submolt, upvotes, comment_count, created_at 
+    FROM posts 
+    WHERE title IS NOT NULL 
+    ORDER BY created_at DESC 
+    LIMIT 300
+  `).all();
+  
+  const clusters = clusterPosts(posts, threshold);
+  
+  // Add theme keywords to each cluster
+  const enrichedClusters = clusters.map(cluster => ({
+    ...cluster,
+    theme: extractClusterTheme(cluster)
+  }));
+  
+  res.json({
+    totalPosts: posts.length,
+    clusteredPosts: clusters.reduce((sum, c) => sum + c.size, 0),
+    clusterCount: clusters.length,
+    clusters: enrichedClusters
+  });
 });
 
 // GET /api/search - Full text search
