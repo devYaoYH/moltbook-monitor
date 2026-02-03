@@ -409,6 +409,14 @@
     
     <div class="card">
       <h2>Posts Over Time</h2>
+      <div class="wordcloud-controls">
+        <select id="timeline-granularity">
+          <option value="hour">Hourly</option>
+          <option value="day" selected>Daily</option>
+          <option value="week">Weekly</option>
+        </select>
+        <button onclick="loadTimeline()">Refresh</button>
+      </div>
       <div id="timeline"></div>
     </div>
     
@@ -520,9 +528,18 @@
       }
     }
     
-    // Timeline chart
+    // Timeline chart with granularity
     async function loadTimeline() {
-      const data = await fetch('/api/trends/timeline').then(r => r.json());
+      const granularity = document.getElementById('timeline-granularity').value;
+      const response = await fetch(`/api/trends/timeline?granularity=${granularity}&limit=100`).then(r => r.json());
+      
+      // For weekly data, we need to handle the date format differently
+      const isWeekly = response.granularity === 'week';
+      const data = response.data.map(d => ({
+        ...d,
+        // Convert week format to a displayable label
+        dateLabel: isWeekly ? d.date : d.date
+      }));
       
       const spec = {
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
@@ -532,12 +549,18 @@
         data: { values: data },
         mark: { type: 'bar', color: '#58a6ff' },
         encoding: {
-          x: { field: 'date', type: 'temporal', title: null },
+          x: { 
+            field: 'date', 
+            type: isWeekly ? 'ordinal' : 'temporal', 
+            title: null,
+            axis: { labelAngle: -45 }
+          },
           y: { field: 'posts', type: 'quantitative', title: 'Posts' },
           tooltip: [
-            { field: 'date', type: 'temporal', title: 'Date' },
+            { field: 'date', type: isWeekly ? 'nominal' : 'temporal', title: granularity === 'hour' ? 'Hour' : granularity === 'week' ? 'Week' : 'Date' },
             { field: 'posts', type: 'quantitative', title: 'Posts' },
-            { field: 'upvotes', type: 'quantitative', title: 'Upvotes' }
+            { field: 'upvotes', type: 'quantitative', title: 'Upvotes' },
+            { field: 'comments', type: 'quantitative', title: 'Comments' }
           ]
         },
         config: {

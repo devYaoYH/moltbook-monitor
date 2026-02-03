@@ -69,17 +69,43 @@ router.get('/trends/authors', (req, res) => {
   res.json(data);
 });
 
-// GET /api/trends/timeline - Posts over time
+// GET /api/trends/timeline - Posts over time with adjustable granularity
 router.get('/trends/timeline', (req, res) => {
+  const granularity = req.query.granularity || 'day'; // hour, day, week
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  
+  let groupBy, dateFormat;
+  switch (granularity) {
+    case 'hour':
+      // SQLite: strftime for hour-level grouping
+      groupBy = "strftime('%Y-%m-%d %H:00', created_at)";
+      dateFormat = 'datetime';
+      break;
+    case 'week':
+      // ISO week: year-week format
+      groupBy = "strftime('%Y-W%W', created_at)";
+      dateFormat = 'week';
+      break;
+    case 'day':
+    default:
+      groupBy = "date(created_at)";
+      dateFormat = 'date';
+  }
+  
   const data = db.prepare(`
-    SELECT date(created_at) as date, COUNT(*) as posts, SUM(upvotes) as upvotes
+    SELECT ${groupBy} as date, COUNT(*) as posts, SUM(upvotes) as upvotes, SUM(comment_count) as comments
     FROM posts
     WHERE created_at IS NOT NULL
-    GROUP BY date(created_at)
+    GROUP BY ${groupBy}
     ORDER BY date DESC
-    LIMIT 30
-  `).all();
-  res.json(data.reverse());
+    LIMIT ?
+  `).all(limit);
+  
+  res.json({
+    granularity,
+    dateFormat,
+    data: data.reverse()
+  });
 });
 
 // GET /api/posts - Paginated posts with filters
