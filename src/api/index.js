@@ -1,6 +1,7 @@
 const express = require('express');
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 const { extractKeywords, computeSimilarity, tokenize } = require('../analysis/text');
 const { clusterPosts, extractClusterTheme } = require('../analysis/clustering');
 const { findNovelPosts, getHighQualityPosts, detectSpamPatterns } = require('../analysis/novelty');
@@ -9,17 +10,43 @@ const router = express.Router();
 
 // Connect to moltbook tracker database
 const DB_PATH = process.env.MOLTBOOK_DB || path.join(process.env.HOME, 'moltbook-tracker/moltbook.db');
+const CACHE_DIR = process.env.CACHE_DIR || path.join(process.env.HOME, 'moltbook-monitor/cache');
 const db = new Database(DB_PATH, { readonly: true });
+
+// Ensure cache directory exists
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
 
 // GET /api/stats - Overview statistics
 router.get('/stats', (req, res) => {
+  const startTime = req.query.start;
+  const endTime = req.query.end;
+  
+  let whereClause = '1=1';
+  const params = [];
+  
+  if (startTime) {
+    whereClause += ' AND created_at >= ?';
+    params.push(startTime);
+  }
+  if (endTime) {
+    whereClause += ' AND created_at <= ?';
+    params.push(endTime);
+  }
+  
   const stats = {
-    totalPosts: db.prepare('SELECT COUNT(*) as n FROM posts').get().n,
-    uniqueAuthors: db.prepare('SELECT COUNT(DISTINCT author) as n FROM posts').get().n,
-    uniqueSubmolts: db.prepare('SELECT COUNT(DISTINCT submolt) as n FROM posts').get().n,
-    curatedPosts: db.prepare('SELECT COUNT(*) as n FROM posts WHERE curated = 1').get().n,
-    totalUpvotes: db.prepare('SELECT SUM(upvotes) as n FROM posts').get().n || 0,
-    totalComments: db.prepare('SELECT SUM(comment_count) as n FROM posts').get().n || 0,
+    totalPosts: db.prepare(`SELECT COUNT(*) as n FROM posts WHERE ${whereClause}`).get(...params).n,
+    uniqueAuthors: db.prepare(`SELECT COUNT(DISTINCT author) as n FROM posts WHERE ${whereClause}`).get(...params).n,
+    uniqueSubmolts: db.prepare(`SELECT COUNT(DISTINCT submolt) as n FROM posts WHERE ${whereClause}`).get(...params).n,
+    curatedPosts: db.prepare(`SELECT COUNT(*) as n FROM posts WHERE curated = 1 AND ${whereClause}`).get(...params).n,
+    totalUpvotes: db.prepare(`SELECT SUM(upvotes) as n FROM posts WHERE ${whereClause}`).get(...params).n || 0,
+    totalComments: db.prepare(`SELECT SUM(comment_count) as n FROM posts WHERE ${whereClause}`).get(...params).n || 0,
+    timeRange: {
+      oldest: db.prepare('SELECT MIN(created_at) as t FROM posts').get().t,
+      newest: db.prepare('SELECT MAX(created_at) as t FROM posts').get().t,
+      filter: { start: startTime, end: endTime }
+    }
   };
   res.json(stats);
 });
@@ -115,6 +142,8 @@ router.get('/posts', (req, res) => {
   const submolt = req.query.submolt;
   const author = req.query.author;
   const sort = req.query.sort || 'recent'; // recent, upvotes, comments
+  const startTime = req.query.start; // ISO date string
+  const endTime = req.query.end; // ISO date string
   
   let query = 'SELECT * FROM posts WHERE 1=1';
   const params = [];
@@ -127,6 +156,14 @@ router.get('/posts', (req, res) => {
     query += ' AND author = ?';
     params.push(author);
   }
+  if (startTime) {
+    query += ' AND created_at >= ?';
+    params.push(startTime);
+  }
+  if (endTime) {
+    query += ' AND created_at <= ?';
+    params.push(endTime);
+  }
   
   const orderBy = {
     recent: 'created_at DESC',
@@ -138,7 +175,15 @@ router.get('/posts', (req, res) => {
   params.push(limit, offset);
   
   const posts = db.prepare(query).all(...params);
-  res.json(posts);
+  const total = db.prepare(query.replace(/SELECT \*/, 'SELECT COUNT(*) as n').replace(/LIMIT.*/, '')).get(...params.slice(0, -2));
+  
+  res.json({
+    posts,
+    total: total?.n || posts.length,
+    limit,
+    offset,
+    filters: { submolt, author, startTime, endTime, sort }
+  });
 });
 
 // GET /api/duplicates - Find similar posts (potential duplicates)
@@ -183,42 +228,132 @@ router.get('/duplicates', (req, res) => {
 // GET /api/clusters - Cluster similar posts together
 router.get('/clusters', (req, res) => {
   const threshold = parseFloat(req.query.threshold) || 0.4;
-  const posts = db.prepare(`
+  const startTime = req.query.start;
+  const endTime = req.query.end;
+  const hidePerfectDupes = req.query.hidePerfectDupes === 'true';
+  const limit = Math.min(parseInt(req.query.limit) || 1000, 5000); // Default 1000, max 5000
+  
+  let query = `
     SELECT id, title, content, author, submolt, upvotes, comment_count, created_at 
     FROM posts 
-    WHERE title IS NOT NULL 
-    ORDER BY created_at DESC 
-    LIMIT 300
-  `).all();
+    WHERE title IS NOT NULL
+  `;
+  const params = [];
+  
+  if (startTime) {
+    query += ' AND created_at >= ?';
+    params.push(startTime);
+  }
+  if (endTime) {
+    query += ' AND created_at <= ?';
+    params.push(endTime);
+  }
+  
+  query += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(limit);
+  
+  const posts = db.prepare(query).all(...params);
+  
+  // Get total posts in time range (without limit) for accurate stats
+  let countQuery = 'SELECT COUNT(*) as n FROM posts WHERE title IS NOT NULL';
+  const countParams = [];
+  if (startTime) {
+    countQuery += ' AND created_at >= ?';
+    countParams.push(startTime);
+  }
+  if (endTime) {
+    countQuery += ' AND created_at <= ?';
+    countParams.push(endTime);
+  }
+  const totalInRange = db.prepare(countQuery).get(...countParams).n;
   
   const clusters = clusterPosts(posts, threshold);
   
+  // Separate perfect duplicates (100% similarity) from other clusters
+  const perfectDupes = clusters.filter(c => c.avgSimilarity >= 0.99);
+  const otherClusters = clusters.filter(c => c.avgSimilarity < 0.99);
+  
+  // Calculate duplicate stats
+  const perfectDupePostCount = perfectDupes.reduce((sum, c) => sum + c.size, 0);
+  const dupePercentage = posts.length > 0 ? Math.round((perfectDupePostCount / posts.length) * 100) : 0;
+  
+  // Choose which clusters to return
+  const displayClusters = hidePerfectDupes ? otherClusters : clusters;
+  
   // Add theme keywords to each cluster
-  const enrichedClusters = clusters.map(cluster => ({
+  const enrichedClusters = displayClusters.map(cluster => ({
     ...cluster,
     theme: extractClusterTheme(cluster)
   }));
   
   res.json({
     totalPosts: posts.length,
+    totalInRange,
     clusteredPosts: clusters.reduce((sum, c) => sum + c.size, 0),
     clusterCount: clusters.length,
+    // Duplicate metrics
+    duplicateStats: {
+      perfectDupeClusterCount: perfectDupes.length,
+      perfectDupePostCount,
+      dupePercentage,
+      hidingPerfectDupes: hidePerfectDupes
+    },
     clusters: enrichedClusters
   });
+});
+
+// GET /api/clusters/precomputed - Serve precomputed cluster data
+router.get('/clusters/precomputed', (req, res) => {
+  const range = req.query.range || 'all'; // '24h', '7d', 'all'
+  const cacheFile = path.join(CACHE_DIR, `clusters-${range}.json`);
+  
+  try {
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      res.json(data);
+    } else {
+      // Fallback: compute on-demand for small datasets
+      res.json({
+        error: 'Precomputed data not available',
+        message: 'Run the precompute script to generate cluster data',
+        totalPosts: 0,
+        clusteredPosts: 0,
+        clusterCount: 0,
+        duplicateStats: { perfectDupeClusterCount: 0, perfectDupePostCount: 0, dupePercentage: 0 },
+        clusters: []
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/novel - Find high-perplexity/novel posts that stand out
 router.get('/novel', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 30, 100);
   const minNovelty = parseFloat(req.query.minNovelty) || 0.3;
+  const startTime = req.query.start;
+  const endTime = req.query.end;
   
-  const posts = db.prepare(`
+  let query = `
     SELECT id, title, content, author, submolt, upvotes, comment_count, created_at 
     FROM posts 
-    WHERE title IS NOT NULL OR content IS NOT NULL
-    ORDER BY created_at DESC 
-    LIMIT 500
-  `).all();
+    WHERE (title IS NOT NULL OR content IS NOT NULL)
+  `;
+  const params = [];
+  
+  if (startTime) {
+    query += ' AND created_at >= ?';
+    params.push(startTime);
+  }
+  if (endTime) {
+    query += ' AND created_at <= ?';
+    params.push(endTime);
+  }
+  
+  query += ' ORDER BY created_at DESC LIMIT 500';
+  
+  const posts = db.prepare(query).all(...params);
   
   const novelPosts = getHighQualityPosts(posts, { limit, minNovelty });
   

@@ -1,0 +1,12 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/the-molt-report/moltbook-monitor:latest' # Adjust your image path
+      - '.'
+
+images:
+  - 'gcr.io/the-molt-report/moltbook-monitor:latest'

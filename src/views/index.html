@@ -342,6 +342,36 @@
       animation: pulse 1.5s infinite;
     }
     
+    .time-filter {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .time-filter label {
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+    
+    .time-info {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+    
+    input[type="datetime-local"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.4rem;
+      border-radius: 4px;
+    }
+    
     .similarity-badge {
       display: inline-block;
       padding: 0.2rem 0.5rem;
@@ -385,6 +415,48 @@
     }
     
     footer a { color: var(--accent); text-decoration: none; }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .tab {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      color: var(--text-dim);
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    
+    .tab:hover { color: var(--text); }
+    
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 0.5rem;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -393,18 +465,52 @@
     <div class="stats-bar" id="stats-bar">Loading...</div>
   </header>
   
+  <div class="time-filter">
+    <label>Time Range:</label>
+    <select id="time-preset" onchange="applyTimePreset()">
+      <option value="all">All Time</option>
+      <option value="1h">Last 1 Hour</option>
+      <option value="6h">Last 6 Hours</option>
+      <option value="24h">Last 24 Hours</option>
+      <option value="7d">Last 7 Days</option>
+      <option value="custom">Custom...</option>
+    </select>
+    <span id="custom-range" style="display:none;">
+      <input type="datetime-local" id="start-time" onchange="applyCustomRange()">
+      <span>to</span>
+      <input type="datetime-local" id="end-time" onchange="applyCustomRange()">
+    </span>
+    <span id="time-range-info" class="time-info"></span>
+  </div>
+  
   <div class="grid">
     <div class="card full-width">
-      <h2>Word Cloud</h2>
-      <div class="wordcloud-controls">
-        <select id="wordcloud-source">
-          <option value="titles">Titles only</option>
-          <option value="content">Content only</option>
-          <option value="both">Titles + Content</option>
-        </select>
-        <button onclick="loadWordCloud()">Refresh</button>
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('wordcloud')">☁️ Word Cloud</div>
+        <div class="tab" onclick="switchTab('search')">🔍 Search</div>
       </div>
-      <div id="wordcloud"></div>
+      
+      <div id="tab-wordcloud" class="tab-content active">
+        <div class="wordcloud-controls">
+          <select id="wordcloud-source">
+            <option value="titles">Titles only</option>
+            <option value="content">Content only</option>
+            <option value="both">Titles + Content</option>
+          </select>
+          <button onclick="loadWordCloud()">Refresh</button>
+        </div>
+        <div id="wordcloud"></div>
+      </div>
+      
+      <div id="tab-search" class="tab-content">
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Search titles and content...">
+          <button onclick="searchPosts()">Search</button>
+        </div>
+        <div class="search-results" id="search-results">
+          <p class="empty">Enter a search term</p>
+        </div>
+      </div>
     </div>
     
     <div class="card">
@@ -439,28 +545,12 @@
     <div class="card full-width">
       <h2>Content Clusters</h2>
       <div class="cluster-controls">
-        <label>Similarity threshold: <input type="range" id="cluster-threshold" min="0.2" max="0.8" step="0.05" value="0.4"></label>
-        <span id="threshold-value">0.4</span>
-        <button onclick="loadClusters()">Refresh</button>
-        <span id="cluster-stats" class="stats-text"></span>
+        <label><input type="checkbox" id="hide-perfect-dupes" checked> Hide 100% duplicates</label>
+        <span id="cluster-loading" style="color: var(--text-dim); margin-left: 1rem;"></span>
       </div>
+      <div id="cluster-stats" class="stats-text" style="margin-bottom: 1rem;"></div>
+      <div id="dupe-stats" class="stats-text" style="margin-bottom: 1rem; padding: 0.5rem; background: var(--bg); border-radius: 4px;"></div>
       <div class="clusters-list" id="clusters">Loading...</div>
-    </div>
-    
-    <div class="card">
-      <h2>Potential Duplicates (Pairs)</h2>
-      <div class="duplicates-list" id="duplicates">Loading...</div>
-    </div>
-    
-    <div class="card">
-      <h2>Search Posts</h2>
-      <div class="search-box">
-        <input type="text" id="search-input" placeholder="Search titles and content...">
-        <button onclick="searchPosts()">Search</button>
-      </div>
-      <div class="search-results" id="search-results">
-        <p class="empty">Enter a search term</p>
-      </div>
     </div>
   </div>
   
@@ -630,12 +720,70 @@
       vegaEmbed('#authors', spec, { actions: false });
     }
     
+    // Time filter state
+    let timeFilter = { start: null, end: null };
+    
+    function getTimeParams() {
+      if (!timeFilter.start && !timeFilter.end) return '';
+      let params = [];
+      if (timeFilter.start) params.push(`start=${encodeURIComponent(timeFilter.start)}`);
+      if (timeFilter.end) params.push(`end=${encodeURIComponent(timeFilter.end)}`);
+      return params.length ? '&' + params.join('&') : '';
+    }
+    
+    function applyTimePreset() {
+      const preset = document.getElementById('time-preset').value;
+      const customEl = document.getElementById('custom-range');
+      
+      if (preset === 'custom') {
+        customEl.style.display = 'inline';
+        return;
+      }
+      customEl.style.display = 'none';
+      
+      const now = new Date();
+      let start = null;
+      
+      switch (preset) {
+        case '1h': start = new Date(now - 60 * 60 * 1000); break;
+        case '6h': start = new Date(now - 6 * 60 * 60 * 1000); break;
+        case '24h': start = new Date(now - 24 * 60 * 60 * 1000); break;
+        case '7d': start = new Date(now - 7 * 24 * 60 * 60 * 1000); break;
+        default: start = null;
+      }
+      
+      timeFilter.start = start ? start.toISOString() : null;
+      timeFilter.end = null;
+      
+      document.getElementById('time-range-info').textContent = 
+        start ? `(${start.toLocaleString()} - now)` : '';
+      
+      refreshAll();
+    }
+    
+    function applyCustomRange() {
+      const startEl = document.getElementById('start-time');
+      const endEl = document.getElementById('end-time');
+      
+      timeFilter.start = startEl.value ? new Date(startEl.value).toISOString() : null;
+      timeFilter.end = endEl.value ? new Date(endEl.value).toISOString() : null;
+      
+      refreshAll();
+    }
+    
+    function refreshAll() {
+      loadStats();
+      loadNovelPosts();
+      loadClusters();
+      loadTimeline();
+    }
+    
     // Novel posts
     async function loadNovelPosts() {
       const container = document.getElementById('novel-posts');
       
       try {
-        const data = await fetch('/api/novel?limit=20').then(r => r.json());
+        const data = await fetch(`/api/novel?limit=20${getTimeParams()}`).then(r => r.json());
         
         if (data.posts.length === 0) {
           container.innerHTML = '<p class="empty">No novel posts found</p>';
@@ -660,36 +808,89 @@
       }
     }
     
-    // Cluster threshold slider
-    document.getElementById('cluster-threshold').addEventListener('input', e => {
-      document.getElementById('threshold-value').textContent = e.target.value;
-    });
+    // Tab switching
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector(`.tab[onclick*="${tabName}"]`).classList.add('active');
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+      
+      // Reload word cloud when switching to it (fixes sizing)
+      if (tabName === 'wordcloud') {
+        setTimeout(loadWordCloud, 50);
+      }
+    }
     
-    // Clusters
+    // Map global time preset to cluster range
+    function getClusterRange() {
+      const preset = document.getElementById('time-preset').value;
+      switch (preset) {
+        case '1h':
+        case '6h':
+        case '24h':
+          return '24h';
+        case '7d':
+          return '7d';
+        default:
+          return 'all';
+      }
+    }
+    
+    // Clusters - load precomputed data, fallback to async computation
+    document.getElementById('hide-perfect-dupes').addEventListener('change', loadClusters);
+    
     async function loadClusters() {
-      const threshold = document.getElementById('cluster-threshold').value;
+      const clusterRange = getClusterRange();
+      const hidePerfectDupes = document.getElementById('hide-perfect-dupes').checked;
       const container = document.getElementById('clusters');
-      container.innerHTML = '<p class="empty">Analyzing posts...</p>';
+      const loadingEl = document.getElementById('cluster-loading');
+      
+      loadingEl.innerHTML = '<span class="spinner"></span>Loading...';
       
       try {
-        const data = await fetch(`/api/clusters?threshold=${threshold}`).then(r => r.json());
+        // Try precomputed first
+        let data = await fetch(`/api/clusters/precomputed?range=${clusterRange}`).then(r => r.json());
         
+        // If no precomputed data, fall back to async computation
+        if (data.error || !data.clusters || data.clusters.length === 0) {
+          loadingEl.innerHTML = '<span class="spinner"></span>Computing clusters...';
+          data = await fetch(`/api/clusters?threshold=0.4&limit=500${getTimeParams()}`).then(r => r.json());
+          loadingEl.textContent = 'Computed on-demand';
+        } else {
+          loadingEl.textContent = data.computedAt ? `Cached ${new Date(data.computedAt).toLocaleString()}` : '';
+        }
+        
+        // Show clustering stats
         document.getElementById('cluster-stats').textContent = 
           `${data.clusterCount} clusters from ${data.clusteredPosts}/${data.totalPosts} posts`;
         
-        if (data.clusters.length === 0) {
-          container.innerHTML = '<p class="empty">No clusters found at this threshold</p>';
+        // Show duplicate stats
+        const dupeStats = data.duplicateStats || { dupePercentage: 0, perfectDupePostCount: 0, perfectDupeClusterCount: 0 };
+        const dupeColor = dupeStats.dupePercentage > 20 ? 'var(--red)' : dupeStats.dupePercentage > 10 ? 'var(--orange)' : 'var(--green)';
+        document.getElementById('dupe-stats').innerHTML = `
+          <strong style="color: ${dupeColor}">📊 ${dupeStats.dupePercentage}% duplicate posts</strong> 
+          (${dupeStats.perfectDupePostCount} posts in ${dupeStats.perfectDupeClusterCount} identical clusters)
+        `;
+        
+        // Filter out perfect dupes if checkbox is checked
+        let clusters = data.clusters || [];
+        if (hidePerfectDupes) {
+          clusters = clusters.filter(c => c.avgSimilarity < 0.99);
+        }
+        
+        if (clusters.length === 0) {
+          container.innerHTML = '<p class="empty">No clusters found</p>';
           return;
         }
         
-        container.innerHTML = data.clusters.map((c, i) => `
+        container.innerHTML = clusters.map((c, i) => `
           <div class="cluster-item" onclick="this.classList.toggle('expanded')">
             <div class="cluster-header">
               <span class="expand-icon">▶</span>
               <span class="cluster-size">${c.size} posts</span>
-              <span class="similarity-badge similarity-${c.avgSimilarity >= 0.6 ? 'high' : c.avgSimilarity >= 0.4 ? 'medium' : 'low'}">${Math.round(c.avgSimilarity * 100)}% similar</span>
+              <span class="similarity-badge similarity-${c.avgSimilarity >= 0.99 ? 'high' : c.avgSimilarity >= 0.6 ? 'medium' : 'low'}">${Math.round(c.avgSimilarity * 100)}% similar</span>
               <div class="cluster-theme">
-                ${c.theme.map(t => `<span class="theme-tag">${escapeHtml(t)}</span>`).join('')}
+                ${(c.theme || []).map(t => `<span class="theme-tag">${escapeHtml(t)}</span>`).join('')}
               </div>
             </div>
             <div class="cluster-posts">
@@ -704,44 +905,9 @@
           </div>
         `).join('');
       } catch (err) {
+        loadingEl.textContent = '';
         container.innerHTML = `<p class="empty">Error loading clusters: ${err.message}</p>`;
       }
-    }
-    
-    // Duplicates
-    async function loadDuplicates() {
-      const data = await fetch('/api/duplicates?threshold=0.5').then(r => r.json());
-      const container = document.getElementById('duplicates');
-      
-      if (data.length === 0) {
-        container.innerHTML = '<p class="empty">No duplicates found</p>';
-        return;
-      }
-      
-      container.innerHTML = data.map((d, i) => {
-        const simClass = d.similarity >= 0.8 ? 'high' : d.similarity >= 0.6 ? 'medium' : 'low';
-        return `
-          <div class="duplicate-item" onclick="this.classList.toggle('expanded')">
-            <div class="duplicate-header">
-              <span class="expand-icon">▶</span>
-              <span class="similarity-badge similarity-${simClass}">${Math.round(d.similarity * 100)}%</span>
-              <span>${escapeHtml(d.postA.title || '(no title)')} ↔ ${escapeHtml(d.postB.title || '(no title)')}</span>
-            </div>
-            <div class="duplicate-content">
-              <div style="margin-bottom: 1rem;">
-                <div class="post-title">${escapeHtml(d.postA.title || '(no title)')}</div>
-                <div class="post-meta">by ${d.postA.author} in m/${d.postA.submolt} • ${d.postA.upvotes} upvotes</div>
-                <div class="post-content-preview">${escapeHtml(d.postA.content || '(no content)')}</div>
-              </div>
-              <div>
-                <div class="post-title">${escapeHtml(d.postB.title || '(no title)')}</div>
-                <div class="post-meta">by ${d.postB.author} in m/${d.postB.submolt} • ${d.postB.upvotes} upvotes</div>
-                <div class="post-content-preview">${escapeHtml(d.postB.content || '(no content)')}</div>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
     }
     
     // Search
@@ -758,10 +924,10 @@
       }
       
       container.innerHTML = data.map(p => `
-        <div class="search-result">
+        <a href="https://moltbook.com/post/${p.id}" target="_blank" rel="noopener" class="search-result" style="display:block; text-decoration:none; color:inherit;">
           <div class="post-title">${escapeHtml(p.title || '(no title)')}</div>
           <div class="post-author">by ${p.author} in m/${p.submolt} • ${p.upvotes} upvotes</div>
-        </div>
+        </a>
       `).join('');
     }
     
@@ -783,7 +949,6 @@
     loadSubmolts();
     loadAuthors();
     loadClusters();
-    loadDuplicates();
     
     // Auto-refresh novel posts and stats every 30 seconds for live updates
     setInterval(() => {
