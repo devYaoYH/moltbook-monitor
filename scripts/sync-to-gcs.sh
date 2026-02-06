@@ -12,7 +12,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') Syncing to GCS..."
 
 # Upload the SQLite database
 echo "Uploading database..."
-gsutil -q cp "$DB_PATH" "$BUCKET/moltbook.db"
+gsutil -q cp -a public-read "$DB_PATH" "$BUCKET/moltbook.db"
 
 # Upload cache files
 echo "Uploading cache files..."

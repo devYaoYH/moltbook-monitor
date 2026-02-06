@@ -13,15 +13,15 @@ const { clusterPosts, extractClusterTheme } = require('../src/analysis/clusterin
 
 const DB_PATH = process.env.MOLTBOOK_DB || path.join(process.env.HOME, 'moltbook-tracker/moltbook.db');
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '../cache');
-const THRESHOLD = 0.4;
+const THRESHOLD = 0.2;
 
 // Limits per range to keep computation reasonable
 // O(n²) clustering: 500 posts = 125K comparisons (~10-15s on this server)
 // TODO: Optimize clustering algorithm or run on more powerful machine
 const LIMITS = {
   '24h': 500,
-  '7d': 400,
-  'all': 300
+  '7d': 1000,
+  'all': 5000
 };
 
 // Ensure cache directory exists
