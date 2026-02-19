@@ -20,7 +20,10 @@ RUN npm ci --production
 
 # Copy application
 COPY src/ ./src/
-COPY scripts/ ./scripts/
+COPY public/ ./public/
+
+# Copy Python tracker scripts
+COPY tracker/ ./tracker/
 
 # Create directories
 RUN mkdir -p /app/data /app/cache
@@ -35,9 +38,6 @@ echo "Fetching data from $BUCKET..."
 # Download database
 gsutil -q cp "$BUCKET/moltbook.db" /app/data/moltbook.db || echo "Warning: Could not fetch database"
 
-# Download cache files
-gsutil -q -m cp "$BUCKET/cache/*.json" /app/cache/ 2>/dev/null || echo "Warning: Could not fetch cache"
-
 echo "Starting server..."
 exec node src/server.js
 EOF
@@ -47,7 +47,7 @@ RUN chmod +x /app/start.sh
 # Environment
 ENV PORT=8080
 ENV MOLTBOOK_DB=/app/data/moltbook.db
-ENV CACHE_DIR=/app/cache
+ENV GCS_BUCKET=gs://moltbook-monitoring-db
 
 EXPOSE 8080
 
