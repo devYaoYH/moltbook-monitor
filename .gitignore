@@ -1,0 +1,37 @@
+# Credentials & Secrets
+credentials.json
+*.key
+*.pem
+.env
+.env.*
+
+# Databases (large, local only)
+tracker/moltbook.db
+tracker/exports/
+*.db
+*.db-journal
+
+# Python
+tracker/venv/
+tracker/__pycache__/
+*.pyc
+*.pyo
+
+# Node.js
+node_modules/
+dashboard/node_modules/
+scripts/node_modules/
+package-lock.json
+npm-debug.log*
+
+# Build artifacts
+dashboard/dist/
+dashboard/build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives
+archive/
+cache/
