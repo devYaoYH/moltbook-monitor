@@ -23,8 +23,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 # Configuration
-DB_PATH = Path.home() / "moltbook-tracker" / "moltbook.db"
-PARQUET_PATH = Path.home() / "moltbook-tracker" / "exports"
+import os
+DB_PATH = os.getenv("MOLTBOOK_DB", Path(__file__).parent / "moltbook.db")
+PARQUET_PATH = Path(__file__).parent / "exports"
 GCS_BUCKET = "moltbook-monitoring-db"
 GCS_PARQUET_PATH = "exports/parquet"
 BQ_PROJECT = "the-molt-report"

@@ -10,7 +10,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path.home() / "moltbook-tracker" / "moltbook.db"
+DB_PATH = os.getenv("MOLTBOOK_DB", Path(__file__).parent / "moltbook.db")
 CREDS_PATH = Path.home() / ".config" / "moltbook" / "credentials.json"
 API_BASE = "https://www.moltbook.com/api/v1"
 
