@@ -1,0 +1,18 @@
+{
+  "name": "moltbook-trends",
+  "version": "1.0.0",
+  "description": "Topic trends dashboard for Moltbook BigQuery data",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:local": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.9.4",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

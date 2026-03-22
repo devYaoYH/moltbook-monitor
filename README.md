@@ -1,135 +1,193 @@
 # Moltbook Monitor
 
-A dashboard and data pipeline for monitoring [Moltbook](https://moltbook.com) — tracking trends, surfacing high-quality posts, and publishing community digests.
+**All-in-one moltbook infrastructure:** Scraper, BigQuery sync, and trends dashboard.
 
-## Overview
+## Components
 
-Moltbook Monitor combines three functions in one repository:
+### 1. Tracker (Python)
+Scrapes moltbook API → SQLite → BigQuery
 
-- **Dashboard** — Live web UI showing submolt activity trends, emerging topics, top authors, keyword clouds, and high-quality posts
-- **Tracker** — Python scripts that fetch posts from the Moltbook API, store them in SQLite, and export to BigQuery
-- **Reporter** — Python scripts that generate and post community digest reports back to Moltbook
+**Location:** `tracker/`
 
-## Dashboard
+**Key files:**
+- `tracker.py` - Fetch posts from moltbook API
+- `export_to_bigquery.py` - Sync SQLite → BigQuery
+- `report_generator.py` - Generate pulse/digest reports
+- `moltbook.db` - SQLite database (gitignored, 1GB+)
 
-The web dashboard is served by a Node.js/Express server and queries Google BigQuery for trend data, with a local SQLite database powering the high-quality posts section.
-
-### Sections
-
-| Section | Data source | Description |
-|---------|-------------|-------------|
-| Submolt Activity (14 days) | BigQuery | Line chart of post volume per community |
-| Emerging Topics | BigQuery | Communities with fastest recent growth |
-| Trending Keywords | BigQuery | Most frequent title words (3-day window) |
-| Activity by Hour | BigQuery | UTC hourly posting pattern |
-| Top Submolts | BigQuery | Most active communities (7 days) |
-| Top Authors | BigQuery | Most active authors by upvotes (7 days) |
-| High-Quality Posts | SQLite | Novel, non-spam posts scored by TF-IDF |
-
-### API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/stats` | Total posts, authors, submolts, last 24h count |
-| `GET /api/submolt-trends` | Daily post counts per submolt (`?days=14&min=5`) |
-| `GET /api/top-submolts` | Top submolts by post count (`?days=7&limit=20`) |
-| `GET /api/emerging` | Growth rate comparison (recent vs prior 4 days) |
-| `GET /api/hourly` | Posts by hour of day (`?days=7`) |
-| `GET /api/keywords` | Frequent title words (`?days=3`) |
-| `GET /api/authors` | Top authors by upvotes (`?days=7&limit=20`) |
-| `GET /api/novel` | High-quality posts (`?limit=30&minNovelty=0.3`) |
-
-## High-Quality Posts
-
-Posts are scored using a TF-IDF novelty algorithm (`src/analysis/novelty.js`):
-
-- Terms rare across the corpus score higher than common/repetitive ones
-- A length bonus rewards substantive posts (50+ words)
-- Spam is filtered out (crypto mint patterns, excessive caps/emoji)
-- Final ranking combines novelty score with a log-scaled engagement boost
-
-## Tracker (`tracker/`)
-
-Python scripts for data collection and export. All scripts expect credentials at `~/.config/moltbook/credentials.json`.
-
+**Setup:**
 ```bash
-# Fetch latest posts into SQLite
-python3 tracker/tracker.py sync
+cd tracker
+pip3 install -r requirements.txt
 
-# Export SQLite → BigQuery (incremental by default)
-python3 tracker/export_to_bigquery.py incremental
+# Configure credentials
+mkdir -p ~/.config/moltbook
+echo '{"api_key": "YOUR_API_KEY"}' > ~/.config/moltbook/credentials.json
 
-# Generate a community digest (display only)
-python3 tracker/report_generator.py digest
+# Fetch posts
+./tracker.py sync
 
-# Post digest to m/moltdigest
-python3 tracker/report_generator.py post-digest
-
-# Generate enriched pulse post (with Brave Search context)
-python3 tracker/report_generator_enhanced.py pulse
+# Export to BigQuery (optional)
+./export_to_bigquery.py incremental
 ```
 
-The SQLite database lives at `~/moltbook-tracker/moltbook.db` by default (override with `MOLTBOOK_DB` env var).
+### 2. Dashboard (Node.js)
+BigQuery-backed trends visualization
 
-BigQuery export state is tracked in `tracker/bigquery_state.json`.
+**Location:** `dashboard/`
 
-## Local Development
+**Features:**
+- Submolt activity trends (14-day chart)
+- Emerging topics (growth detection)
+- Trending keywords from titles
+- Hourly activity patterns
+- Top submolts and authors
 
+**Local development:**
 ```bash
-# Install dependencies
+cd dashboard
+npm install
+npm start  # http://localhost:3002
+```
+
+**Deploy to Cloud Run:**
+```bash
+cd dashboard
+gcloud builds submit --tag gcr.io/the-molt-report/moltbook-trends
+gcloud run deploy moltbook-trends \
+  --image gcr.io/the-molt-report/moltbook-trends \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+**Public URL:** https://moltbook-trends-366966696644.us-central1.run.app
+
+### 3. Scripts (Optional)
+Offline pipelines for aggregation and analysis
+
+**Location:** `scripts/`
+
+- `sync-all.sh` - Run tracker → BigQuery export → precompute
+- `precompute-clusters.js` - Clustering and novelty scoring (optional)
+
+## Quick Start
+
+### Initial Setup
+```bash
+# Clone repo
+git clone git@github.com:devYaoYH/moltbook-monitor.git ~/moltbook-monitor
+cd ~/moltbook-monitor
+
+# Setup tracker
+cd tracker
+pip3 install -r requirements.txt
+
+# Setup dashboard
+cd ../dashboard
 npm install
 
-# Start server (default port 3001)
-npm run dev
-
-# Or on a specific port
-PORT=3001 node src/server.js
+# Start dashboard
+npm start
 ```
 
-The server will warn if the SQLite database isn't found but will still serve the BigQuery-powered sections.
-
-## Deployment (Google Cloud Run)
-
+### Cron Job (Automated Sync)
+Add to crontab or use OpenClaw cron:
 ```bash
-# Build and deploy via Cloud Build
-./deploy.sh
+# Every 30 minutes: sync posts + export to BigQuery
+*/30 * * * * cd ~/moltbook-monitor && ./scripts/sync-all.sh
 ```
 
-The Docker container:
-1. Downloads `moltbook.db` from `gs://moltbook-monitoring-db` at startup
-2. Starts the Node.js server on port 8080
+## Architecture
 
-Environment variables:
+```
+Moltbook API → tracker.py → SQLite (moltbook.db)
+                              ↓
+                     export_to_bigquery.py
+                              ↓
+                         BigQuery (posts table)
+                              ↓
+                      Dashboard (port 3002)
+                      Queries BigQuery for analytics
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8080` | Server port |
-| `GCP_PROJECT` | `the-molt-report` | BigQuery project ID |
-| `GCS_BUCKET` | `gs://moltbook-monitoring-db` | GCS bucket for SQLite database |
-| `MOLTBOOK_DB` | `/app/data/moltbook.db` | Path to SQLite database |
+## API Endpoints
 
-## Repository Structure
+Dashboard exposes:
+- `GET /api/stats` - Overall statistics
+- `GET /api/submolt-trends?days=14` - Time series data
+- `GET /api/emerging` - Topics with growth/decline
+- `GET /api/keywords?days=3` - Trending keywords
+- `GET /api/hourly` - Activity by hour
+- `GET /api/top-submolts` - Leaderboard
+- `GET /api/authors` - Top contributors
+
+## BigQuery Setup
+
+**Project:** `the-molt-report`  
+**Dataset:** `moltbook`  
+**Table:** `posts`
+
+Schema managed by `tracker/export_to_bigquery.py` (creates table if missing).
+
+## Development
+
+**Tracker:**
+```bash
+cd tracker
+python3 tracker.py sync     # Fetch latest posts
+python3 export_to_bigquery.py full  # Full export
+```
+
+**Dashboard:**
+```bash
+cd dashboard
+npm run dev  # Watch mode
+```
+
+## Deployment
+
+**Dashboard to Cloud Run:**
+```bash
+cd dashboard
+./deploy.sh  # Builds + deploys
+```
+
+Dockerfile and cloudbuild.yaml included.
+
+## Credentials
+
+**Required:**
+- `~/.config/moltbook/credentials.json` - Moltbook API key
+- `~/.config/gcloud/` - Google Cloud credentials (for BigQuery)
+
+**Never commit credentials to git!**
+
+## File Structure
 
 ```
 moltbook-monitor/
-├── src/
-│   ├── server.js           # Express server (BigQuery + SQLite endpoints)
-│   └── analysis/
-│       ├── novelty.js      # TF-IDF novelty scoring & spam detection
-│       ├── text.js         # Tokenization & similarity utilities
-│       └── clustering.js   # Union-find post clustering
-├── public/
-│   └── index.html          # Single-page dashboard
-├── tracker/
-│   ├── tracker.py          # Moltbook API → SQLite
-│   ├── export_to_bigquery.py  # SQLite → BigQuery pipeline
-│   ├── report_generator.py    # Daily digest generator
-│   ├── report_generator_enhanced.py  # Web-enriched pulse posts
-│   └── schema.sql          # SQLite schema
-├── scripts/
-│   ├── sync-to-gcs.sh      # Upload database & cache to GCS
-│   └── sync-and-precompute.sh  # Full sync pipeline
-├── Dockerfile
-├── cloudbuild.yaml
-└── deploy.sh
+├── tracker/              ← Python scraper + BigQuery sync
+│   ├── tracker.py
+│   ├── export_to_bigquery.py
+│   ├── report_generator.py
+│   ├── schema.sql
+│   └── requirements.txt
+├── dashboard/            ← Trends visualization (port 3002)
+│   ├── server.js
+│   ├── package.json
+│   ├── public/
+│   ├── Dockerfile
+│   └── cloudbuild.yaml
+├── scripts/              ← Optional offline pipelines
+│   ├── sync-all.sh
+│   └── precompute-clusters.js
+├── .gitignore
+└── README.md
 ```
+
+---
+
+**Repository:** https://github.com/devYaoYH/moltbook-monitor  
+**Dashboard:** https://moltbook-trends-366966696644.us-central1.run.app  
+**Agent:** Ethan (MoltReporter)
